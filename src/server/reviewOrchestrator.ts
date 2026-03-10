@@ -175,6 +175,7 @@ function getCurrentBranch(repoPath: string): string | null {
 export class LocalReviewOrchestrator {
   private currentJobId: string | null = null;
   private mergeRequestId: string | null = null;
+  private reviewMergeRequestId: string | null = null; // persists the review context ID across fixes
   private repoPath: string | null = null;
   private childProcess: ChildProcess | null = null;
   private abortController: AbortController | null = null;
@@ -224,6 +225,7 @@ export class LocalReviewOrchestrator {
           // Found a completed review for this branch — restore
           this.repoPath = repoPath;
           this.mergeRequestId = file.replace('.json', '');
+          this.reviewMergeRequestId = this.mergeRequestId;
           this.lastResult = {
             blocking: context.result.blocking,
             warnings: context.result.warnings,
@@ -340,6 +342,7 @@ export class LocalReviewOrchestrator {
     const jobId = `local-${Date.now()}`;
     this.currentJobId = jobId;
     this.mergeRequestId = `local-${repoName}-${jobId}`;
+    this.reviewMergeRequestId = this.mergeRequestId;
     this.lastActionCount = 0;
     this.lastPhase = null;
     this.completedEmitted = false;
@@ -571,9 +574,13 @@ export class LocalReviewOrchestrator {
       this.stopReview();
     }
 
-    // Read the current findings from context and match by DiffComment IDs
+    // Read the review context (not a previous fix context) to get findings
+    const savedMergeRequestId = this.mergeRequestId;
+    if (this.reviewMergeRequestId) {
+      this.mergeRequestId = this.reviewMergeRequestId;
+    }
     console.log(
-      `[fix] Reading context: repoPath=${repoPath}, mergeRequestId=${this.mergeRequestId}`,
+      `[fix] Reading review context: repoPath=${repoPath}, mergeRequestId=${this.mergeRequestId}`,
     );
     const previousContext = this.readContext();
     console.log(`[fix] Context actions count: ${previousContext?.actions?.length ?? 'null'}`);
@@ -582,6 +589,8 @@ export class LocalReviewOrchestrator {
     console.log(`[fix] Requested findingIds: ${findingIds.join(', ')}`);
     const selectedDiffComments = allDiffComments.filter((c) => findingIds.includes(c.id));
     console.log(`[fix] Matched ${selectedDiffComments.length}/${findingIds.length} findings`);
+    // Restore mergeRequestId before overwriting with fix context
+    this.mergeRequestId = savedMergeRequestId;
 
     // Build the findings descriptions to pass to the fix agent
     const selectedFindings = selectedDiffComments.map((c) => {
@@ -754,6 +763,10 @@ export class LocalReviewOrchestrator {
       });
       this.currentJobId = null;
       this.childProcess = null;
+      // Restore review context ID so subsequent fixes can read the review findings
+      if (this.reviewMergeRequestId) {
+        this.mergeRequestId = this.reviewMergeRequestId;
+      }
     });
 
     this.childProcess.on('error', (err) => {
