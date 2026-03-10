@@ -303,7 +303,18 @@ export class LocalReviewOrchestrator {
   getFindings(): DiffComment[] {
     const context = this.readContext();
     if (!context) return [];
-    return reviewContextToDiffComments(context);
+    const findings = reviewContextToDiffComments(context);
+    // Apply persisted fixed status
+    const raw = context as unknown as Record<string, unknown>;
+    const fixedIds = (raw.fixedFindingIds as string[] | undefined) ?? [];
+    if (fixedIds.length > 0) {
+      for (const f of findings) {
+        if (fixedIds.includes(f.id)) {
+          f.status = 'fixed';
+        }
+      }
+    }
+    return findings;
   }
 
   getResult(): ReviewResult | null {
@@ -756,6 +767,10 @@ export class LocalReviewOrchestrator {
         clearInterval(this.pollInterval);
         this.pollInterval = null;
       }
+      // Persist fixedIds into the review context JSON so they survive restarts
+      if (this.reviewMergeRequestId && this.repoPath) {
+        this.persistFixedIds(fixingIds);
+      }
       this.emit({
         type: 'complete',
         result: { blocking: 0, warnings: 0, suggestions: 0, score: 100, verdict: 'fixed' },
@@ -804,6 +819,25 @@ export class LocalReviewOrchestrator {
       return JSON.parse(readFileSync(filePath, 'utf-8')) as ReviewContext;
     } catch {
       return null;
+    }
+  }
+
+  private persistFixedIds(newFixedIds: string[]): void {
+    if (!this.repoPath || !this.reviewMergeRequestId) return;
+    const filePath = join(
+      this.repoPath,
+      '.claude',
+      'reviews',
+      'logs',
+      `${this.reviewMergeRequestId}.json`,
+    );
+    try {
+      const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+      const existing = (raw.fixedFindingIds as string[] | undefined) ?? [];
+      raw.fixedFindingIds = [...new Set([...existing, ...newFixedIds])];
+      writeFileSync(filePath, JSON.stringify(raw, null, 2));
+    } catch {
+      // ignore — best effort
     }
   }
 
