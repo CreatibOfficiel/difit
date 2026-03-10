@@ -17,6 +17,7 @@ import { getFileExtension } from '../utils/fileUtils.js';
 
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
+import { LocalReviewOrchestrator, type ReviewEvent } from './reviewOrchestrator.js';
 
 import {
   type Comment,
@@ -506,6 +507,111 @@ export async function startServer(
         }, 100);
       }
     });
+  });
+
+  // --- AI Review endpoints ---
+  const reviewOrchestrator = new LocalReviewOrchestrator();
+  reviewOrchestrator.tryRestoreLastReview(repositoryPath);
+
+  app.post('/api/review/start', (req, res) => {
+    try {
+      if (reviewOrchestrator.isRunning()) {
+        res.status(409).json({ error: 'A review is already running' });
+        return;
+      }
+
+      const { skill } = (req.body ?? {}) as { skill?: string };
+      const base = options.baseCommitish ?? 'HEAD^';
+      const target = options.targetCommitish ?? 'HEAD';
+      const jobId = reviewOrchestrator.startReview(repositoryPath, base, target, skill);
+      res.json({ jobId });
+    } catch (error) {
+      console.error('Error starting review:', error);
+      res
+        .status(500)
+        .json({ error: error instanceof Error ? error.message : 'Failed to start review' });
+    }
+  });
+
+  app.get('/api/review/status', (_req, res) => {
+    const snapshot = reviewOrchestrator.getSnapshot();
+    res.json({
+      running: reviewOrchestrator.isRunning(),
+      progress: snapshot.progress,
+      findings: snapshot.findings,
+      result: snapshot.result,
+    });
+  });
+
+  app.post('/api/review/stop', (_req, res) => {
+    try {
+      reviewOrchestrator.stopReview();
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error stopping review:', error);
+      res.status(500).json({ error: 'Failed to stop review' });
+    }
+  });
+
+  app.get('/api/review/progress', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    // Replay existing state for late-connecting clients
+    const snapshot = reviewOrchestrator.getSnapshot();
+    if (snapshot.progress) {
+      res.write(
+        `data: ${JSON.stringify({
+          type: 'progress',
+          phase: snapshot.progress.phase,
+          agents: snapshot.progress.agents,
+          overallProgress: snapshot.progress.overallProgress,
+        } satisfies ReviewEvent)}\n\n`,
+      );
+    }
+    for (const finding of snapshot.findings) {
+      res.write(
+        `data: ${JSON.stringify({ type: 'finding', comment: finding } satisfies ReviewEvent)}\n\n`,
+      );
+    }
+    if (snapshot.result) {
+      res.write(
+        `data: ${JSON.stringify({ type: 'complete', result: snapshot.result } satisfies ReviewEvent)}\n\n`,
+      );
+    }
+
+    const sendEvent = (event: ReviewEvent) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    const unsubscribe = reviewOrchestrator.on(sendEvent);
+
+    req.on('close', () => {
+      unsubscribe();
+    });
+  });
+
+  app.post('/api/review/fix', (req, res) => {
+    try {
+      const { findingIds } = (req.body ?? {}) as { findingIds?: string[] };
+      console.log('[fix] Received fix request with findingIds:', findingIds);
+      if (!findingIds || findingIds.length === 0) {
+        res.status(400).json({ error: 'No finding IDs provided' });
+        return;
+      }
+      const jobId = reviewOrchestrator.startFix(repositoryPath, findingIds);
+      console.log('[fix] Started fix job:', jobId);
+      res.json({ jobId });
+    } catch (error) {
+      console.error('Error starting fix:', error);
+      res
+        .status(500)
+        .json({ error: error instanceof Error ? error.message : 'Failed to start fix' });
+    }
   });
 
   // Always runs in production mode when distributed as a CLI tool
