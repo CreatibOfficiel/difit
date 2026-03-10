@@ -1,4 +1,13 @@
-import { Columns, AlignLeft, Settings, PanelLeftClose, PanelLeft, Keyboard } from 'lucide-react';
+import {
+  Columns,
+  AlignLeft,
+  Settings,
+  PanelLeftClose,
+  PanelLeft,
+  Keyboard,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import {
@@ -144,6 +153,21 @@ function App() {
   } = useReviewProgress(() => {
     void fetchDiffDataRef.current?.();
   });
+
+  const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
+
+  const toggleFindingSelection = useCallback((id: string) => {
+    setSelectedFindingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearFindingSelection = useCallback(() => {
+    setSelectedFindingIds(new Set());
+  }, []);
 
   const findingsCount = useMemo(() => {
     let blocking = 0;
@@ -803,8 +827,19 @@ function App() {
       rejectFinding,
       fixFinding: (id: string) => void fixFindings([id]),
       isFixing,
+      selectedIds: selectedFindingIds,
+      toggleSelection: toggleFindingSelection,
+      clearSelection: clearFindingSelection,
     }),
-    [acceptFinding, rejectFinding, fixFindings, isFixing],
+    [
+      acceptFinding,
+      rejectFinding,
+      fixFindings,
+      isFixing,
+      selectedFindingIds,
+      toggleFindingSelection,
+      clearFindingSelection,
+    ],
   );
 
   if (loading) {
@@ -1255,6 +1290,38 @@ function App() {
               })}
             </main>
           </div>
+
+          {selectedFindingIds.size > 0 && !isFixing && (
+            <div className="fixed bottom-0 left-0 right-0 z-30 bg-github-bg-secondary border-t border-github-border px-4 py-2.5 flex items-center justify-between shadow-lg">
+              <span className="text-sm text-github-text-secondary">
+                <span className="font-medium text-github-text-primary">
+                  {selectedFindingIds.size}
+                </span>{' '}
+                finding{selectedFindingIds.size > 1 ? 's' : ''} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={clearFindingSelection}
+                  className="text-xs px-3 py-1.5 rounded border border-github-border text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary transition-colors"
+                >
+                  <X size={12} className="inline mr-1" />
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void fixFindings([...selectedFindingIds]);
+                    clearFindingSelection();
+                  }}
+                  className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <Wrench size={12} className="inline mr-1" />
+                  Fix {selectedFindingIds.size} finding{selectedFindingIds.size > 1 ? 's' : ''}
+                </button>
+              </div>
+            </div>
+          )}
 
           {showMobileCommentsBar && (
             <div className="fixed bottom-0 left-0 right-0 z-20 bg-github-bg-secondary border-t border-github-border px-4 py-2 flex justify-end">

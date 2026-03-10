@@ -57,6 +57,8 @@ export function InlineComment({
     rejectFinding: onReject,
     fixFinding: onFix,
     isFixing,
+    selectedIds,
+    toggleSelection,
   } = useReviewActions();
   const [isCopied, setIsCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -184,6 +186,19 @@ export function InlineComment({
     >
       <div className="flex items-center justify-between mb-2 gap-3">
         <div className="flex items-center gap-2 text-xs text-github-text-secondary flex-1 min-w-0">
+          {isAiReview && status === 'pending' && (
+            <input
+              type="checkbox"
+              checked={selectedIds.has(comment.id)}
+              onChange={(e) => {
+                e.stopPropagation();
+                toggleSelection(comment.id);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-3.5 h-3.5 rounded border-github-border accent-blue-500 cursor-pointer"
+              title="Select for batch fix"
+            />
+          )}
           {isAiReview && sevConfig && (
             <span
               className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${sevConfig.badgeClass}`}
