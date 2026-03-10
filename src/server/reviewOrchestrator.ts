@@ -763,6 +763,21 @@ export class LocalReviewOrchestrator {
     this.childProcess.on('close', (code) => {
       console.log(`[fix] Claude process exited with code ${code}`);
       this.cleanupJobContext(jobId);
+      // Clean up the fix context file (not needed after completion)
+      if (this.repoPath && this.mergeRequestId) {
+        const fixContextPath = join(
+          this.repoPath,
+          '.claude',
+          'reviews',
+          'logs',
+          `${this.mergeRequestId}.json`,
+        );
+        try {
+          if (existsSync(fixContextPath)) unlinkSync(fixContextPath);
+        } catch {
+          // ignore
+        }
+      }
       if (this.pollInterval) {
         clearInterval(this.pollInterval);
         this.pollInterval = null;
