@@ -58,6 +58,8 @@ interface CliOptions {
   clean?: boolean;
   includeUntracked?: boolean;
   keepAlive?: boolean;
+  review?: boolean;
+  reviewSkill?: string;
 }
 
 const program = new Command();
@@ -89,6 +91,8 @@ program
   .option('--clean', 'start with a clean slate by clearing all existing comments')
   .option('--include-untracked', 'automatically include untracked files in diff')
   .option('--keep-alive', 'keep server running even after browser disconnects')
+  .option('--review', 'run AI code review on the current diff')
+  .option('--review-skill <skill>', 'review skill to use', 'review')
   .action(async (commitish: string, compareWith: string | undefined, options: CliOptions) => {
     try {
       let stdinDiff: string | undefined;
@@ -249,6 +253,25 @@ program
         console.log('🌐 Opening browser...\n');
       } else {
         console.log('💡 Use --open to automatically open browser\n');
+      }
+
+      // Auto-start AI review if --review flag is set
+      if (options.review && !isEmpty) {
+        try {
+          const reviewResponse = await fetch(`http://localhost:${port}/api/review/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skill: options.reviewSkill }),
+          });
+          if (reviewResponse.ok) {
+            const { jobId } = (await reviewResponse.json()) as { jobId: string };
+            console.log(`🤖 AI review started (job: ${jobId})`);
+          } else {
+            console.warn('⚠️  Failed to start AI review');
+          }
+        } catch {
+          console.warn('⚠️  Failed to start AI review');
+        }
       }
 
       process.on('SIGINT', async () => {
