@@ -72,6 +72,10 @@ export interface Comment {
   timestamp: string;
   codeContent?: string; // The actual code content for this line
   side?: DiffSide; // Which side the comment is on
+  severity?: FindingSeverity;
+  source?: CommentSource;
+  status?: FindingStatus;
+  agentName?: string;
 }
 
 export interface LineSelection {
@@ -80,6 +84,10 @@ export interface LineSelection {
 }
 
 // New data structures for enhanced comment and viewed state management
+
+export type FindingSeverity = 'blocking' | 'warning' | 'suggestion';
+export type CommentSource = 'human' | 'ai-review';
+export type FindingStatus = 'pending' | 'accepted' | 'rejected' | 'fixed';
 
 export interface DiffComment {
   id: string; // UUID format recommended
@@ -99,6 +107,12 @@ export interface DiffComment {
     content: string;
     language?: string; // inferred from file extension
   };
+
+  // AI review fields
+  severity?: FindingSeverity;
+  source?: CommentSource;
+  status?: FindingStatus;
+  agentName?: string;
 }
 
 export interface ViewedFileRecord {
